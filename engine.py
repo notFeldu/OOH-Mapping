@@ -8104,3 +8104,129 @@ def build_store_map(full_result, zoom_start=14):
         )
 
     return m
+
+
+def build_store_onepager(result):
+    """
+    Combine the management report and the interactive map into one
+    self-contained HTML file per store -- handoff-ready for a
+    Regional Manager, rather than living only inside a Colab cell.
+
+    Pass the full return value of run_store(..., return_full_result=True).
+    """
+
+    import datetime
+
+    report = result["management_report"]
+    full = result["full_result"]
+
+    store = report["store"]
+    package = report["package"]
+    counts = report["location_counts"]
+
+    # -----------------------------------------------------
+    # STEP A: turn each report table into a styled HTML table
+    # (not a raw pandas dump)
+    # -----------------------------------------------------
+
+    def render_table(df):
+        if df.empty:
+            return "<p class='empty'>No locations recommended.</p>"
+        return df.to_html(index=False, classes="rec-table", border=0, escape=False)
+
+    auto_table_html = render_table(report["recommendations"]["auto_tops"])
+    kiosk_table_html = render_table(report["recommendations"]["pole_kiosks"])
+    board_table_html = render_table(report["recommendations"]["no_parking_boards"])
+
+    # -----------------------------------------------------
+    # STEP B: build the interactive map and grab its embeddable HTML
+    # -----------------------------------------------------
+
+    store_map = build_store_map(full)
+    map_embed_html = store_map._repr_html_()
+
+    # -----------------------------------------------------
+    # STEP C: page styling (kept in one place, one CSS block)
+    # -----------------------------------------------------
+
+    css = """
+    body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+           margin: 0; padding: 0; background: #f7f7f8; color: #222; }
+    .header { background: #1a1a2e; color: white; padding: 28px 40px; }
+    .header h1 { margin: 0 0 6px 0; font-size: 24px; }
+    .header .meta { color: #b8b8c8; font-size: 13px; }
+    .package-bar { display: flex; gap: 24px; background: #16213e; padding: 14px 40px;
+                   color: white; font-size: 14px; }
+    .package-bar b { font-size: 18px; display: block; }
+    .content { padding: 30px 40px; }
+    .section { background: white; border-radius: 8px; padding: 22px 26px;
+               margin-bottom: 22px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .section h2 { margin-top: 0; font-size: 17px; color: #1a1a2e; }
+    table.rec-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    table.rec-table th { text-align: left; background: #f0f0f4; padding: 8px 10px;
+                          border-bottom: 2px solid #ddd; }
+    table.rec-table td { padding: 7px 10px; border-bottom: 1px solid #eee; }
+    .empty { color: #888; font-style: italic; }
+    .footer { padding: 16px 40px; color: #888; font-size: 12px; }
+    """
+
+    # -----------------------------------------------------
+    # STEP D: assemble the full page
+    # -----------------------------------------------------
+
+    generated_at = datetime.datetime.now().strftime("%d %b %Y, %H:%M")
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{store['city']} -- OOH Siting Plan</title>
+<style>{css}</style>
+</head>
+<body>
+
+<div class="header">
+    <h1>{store['city']} -- OOH Siting Plan</h1>
+    <div class="meta">Generated {generated_at} &middot; {store['latitude']:.4f}, {store['longitude']:.4f}</div>
+</div>
+
+<div class="package-bar">
+    <div><b>{package['auto_tops']}</b>Auto Tops</div>
+    <div><b>{package['pole_kiosks']}</b>Pole Kiosks</div>
+    <div><b>{package['no_parking_boards']}</b>No Parking Boards</div>
+</div>
+
+<div class="content">
+
+    <div class="section">
+        <h2>Auto Top Corridors ({counts['auto_tops']})</h2>
+        {auto_table_html}
+    </div>
+
+    <div class="section">
+        <h2>Pole Kiosk Clusters ({counts['pole_kiosks']})</h2>
+        {kiosk_table_html}
+    </div>
+
+    <div class="section">
+        <h2>No Parking Board Sites ({counts['no_parking_boards']})</h2>
+        {board_table_html}
+    </div>
+
+    <div class="section">
+        <h2>Map</h2>
+        {map_embed_html}
+    </div>
+
+</div>
+
+<div class="footer">
+    Retail OOH Siting Engine &middot; built from public OpenStreetMap data.
+    Not empirically calibrated against footfall or redemption data -- treat scores as a planning
+    priority signal, not a guarantee.
+</div>
+
+</body>
+</html>"""
+
+    return html
