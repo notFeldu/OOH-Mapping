@@ -8230,3 +8230,101 @@ def build_store_onepager(result):
 </html>"""
 
     return html
+def build_vendor_sheet(result):
+    """
+    A flat, no-frills site list for the vendor/agency doing the
+    physical installation -- just where each unit goes and how many,
+    with a clickable Google Maps link. No index scores, no "why"
+    reasoning -- that's for the management one-pager, not this.
+
+    Returns a pandas DataFrame; convert with .to_csv(index=False)
+    for a downloadable file.
+    """
+
+    full = result["full_result"]
+    store = full["store"]
+    rows = []
+
+    # -----------------------------------------------------
+    # Auto Tops -- corridor midpoint as the representative point
+    # (it's a route, not a single site, so this is "centre of the
+    # corridor" rather than an exact install location)
+    # -----------------------------------------------------
+
+    auto_plan = full["auto_plan"]
+    allocated_corridors = auto_plan[auto_plan["auto_tops_allocation"] > 0]
+    segments = full["operational_segments"]
+
+    for _, corridor in allocated_corridors.iterrows():
+        corridor_id = corridor["operational_corridor_id"]
+        corridor_segments = segments[
+            segments["operational_corridor_id"] == corridor_id
+        ]
+        # midpoint of the corridor's longest segment as the reference point
+        if not corridor_segments.empty:
+            longest = corridor_segments.loc[corridor_segments["length"].idxmax()]
+            mid_point = longest["geometry"].interpolate(0.5, normalized=True)
+            lat, lon = mid_point.y, mid_point.x
+        else:
+            lat, lon = store.latitude, store.longitude
+
+        rows.append({
+            "Media Type": "Auto Top",
+            "Site ID": f"Corridor {corridor_id}",
+            "Quantity": int(corridor["auto_tops_allocation"]),
+            "Latitude": round(lat, 6),
+            "Longitude": round(lon, 6),
+            "Google Maps Link": f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}",
+            "Notes": "Route/corridor -- distribute along this road, not a single point"
+        })
+
+    # -----------------------------------------------------
+    # Pole Kiosks -- exact cluster point
+    # -----------------------------------------------------
+
+    kiosk_plan = full["kiosk_plan"]
+    for _, row in kiosk_plan[kiosk_plan["pole_kiosks_allocation"] > 0].iterrows():
+        lat, lon = row["cluster_latitude"], row["cluster_longitude"]
+        rows.append({
+            "Media Type": "Pole Kiosk",
+            "Site ID": f"Kiosk cluster {row['kiosk_cluster_id']}",
+            "Quantity": int(row["pole_kiosks_allocation"]),
+            "Latitude": round(lat, 6),
+            "Longitude": round(lon, 6),
+            "Google Maps Link": f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}",
+            "Notes": ""
+        })
+
+    # -----------------------------------------------------
+    # No Parking Boards -- cluster point, or zone centre on fallback
+    # -----------------------------------------------------
+
+    board_plan = full["board_plan"]
+    method = full.get("board_placement_method", "catchment_zone_fallback")
+    allocated_boards = board_plan[board_plan["no_parking_boards_allocation"] > 0]
+
+    if method == "candidate_clusters":
+        for _, row in allocated_boards.iterrows():
+            lat, lon = row["cluster_latitude"], row["cluster_longitude"]
+            rows.append({
+                "Media Type": "No Parking Board",
+                "Site ID": f"Board cluster {row['board_cluster_id']}",
+                "Quantity": int(row["no_parking_boards_allocation"]),
+                "Latitude": round(lat, 6),
+                "Longitude": round(lon, 6),
+                "Google Maps Link": f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}",
+                "Notes": ""
+            })
+    else:
+        for _, row in allocated_boards.iterrows():
+            rows.append({
+                "Media Type": "No Parking Board",
+                "Site ID": f"Zone {row['zone']}",
+                "Quantity": int(row["no_parking_boards_allocation"]),
+                "Latitude": round(store.latitude, 6),
+                "Longitude": round(store.longitude, 6),
+                "Google Maps Link": f"https://www.google.com/maps?q={store.latitude:.6f},{store.longitude:.6f}",
+                "Notes": f"Sparse-area fallback -- distribute across the {row['zone']} ring around the store, not one fixed point"
+            })
+
+    return pd.DataFrame(rows)
