@@ -8,7 +8,7 @@ Deploy for free at: share.streamlit.io (see deployment steps in chat)
 import streamlit as st
 import streamlit.components.v1 as components
 
-from engine import run_store, build_store_map, build_store_onepager
+from engine import run_store, build_store_map, build_store_onepager, build_vendor_sheet
 
 st.set_page_config(page_title="Retail OOH Siting Engine", layout="wide")
 
@@ -101,11 +101,26 @@ if submitted:
         components.html(store_map._repr_html_(), height=650)
 
     st.divider()
+    st.subheader("Downloads")
 
-    onepager_html = build_store_onepager(result)
-    st.download_button(
-        "Download one-pager (HTML)",
-        data=onepager_html,
-        file_name=f"{city.replace(' ', '_')}_siting_onepager.html",
-        mime="text/html"
-    )
+    dl_col1, dl_col2 = st.columns(2)
+
+    with dl_col1:
+        st.caption("For your boss / management -- the full picture, with reasoning and the map")
+        onepager_html = build_store_onepager(result)
+        st.download_button(
+            "Download management one-pager (HTML)",
+            data=onepager_html,
+            file_name=f"{city.replace(' ', '_')}_siting_onepager.html",
+            mime="text/html"
+        )
+
+    with dl_col2:
+        st.caption("For the vendor/agency -- just site, quantity, and a map link, ready to work from")
+        vendor_df = build_vendor_sheet(result)
+        st.download_button(
+            "Download vendor sheet (CSV)",
+            data=vendor_df.to_csv(index=False),
+            file_name=f"{city.replace(' ', '_')}_vendor_sheet.csv",
+            mime="text/csv"
+        )
