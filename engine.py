@@ -516,29 +516,49 @@ SEGMENT_OPPORTUNITY_WEIGHTS = {
     "trip_generators": 0.15,
 }
 
+OVERPASS_MIRRORS = [
+    "https://overpass-api.de/api",         # default
+    "https://overpass.kumi.systems/api",   # independent operator -- best test of
+                                            # whether it's overpass-api.de specifically
+    "https://lz4.overpass-api.de/api",     # load-balanced variant of the default
+]
+
 def _fetch_with_retry(fn, *args, max_attempts=4, backoff_base_s=2.0, **kwargs):
     """
-    CONSOLIDATION FIX: the original notebook called the Overpass API
-    (via osmnx) with no error handling anywhere. A single timeout or
-    rate-limit killed the whole store analysis. This retries with
-    exponential backoff before giving up.
+    CONSOLIDATION FIX (v2): the original notebook called the Overpass
+    API (via osmnx) with no error handling anywhere. This retries
+    with exponential backoff, and -- new in this version -- falls
+    through to alternate public Overpass mirrors if the default one
+    is unreachable entirely (connection refused, not just slow),
+    rather than only ever retrying the same host.
+
+    Not independently verified that every mirror below is currently
+    up -- these are well-known public Overpass mirrors, but their
+    availability can change. If all three fail, that's a strong
+    signal the problem is on this end (e.g. hosting network
+    restrictions), not a one-off Overpass outage.
     """
     last_error = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as exc:
-            last_error = exc
-            if attempt == max_attempts:
-                break
-            wait_s = backoff_base_s * (2 ** (attempt - 1))
-            print(
-                f"  OSM request failed (attempt {attempt}/{max_attempts}): "
-                f"{exc!r} -- retrying in {wait_s:.0f}s"
-            )
-            time.sleep(wait_s)
+    for mirror in OVERPASS_MIRRORS:
+        ox.settings.overpass_url = mirror
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:
+                last_error = exc
+                if attempt == max_attempts:
+                    break
+                wait_s = backoff_base_s * (2 ** (attempt - 1))
+                print(
+                    f"  OSM request via {mirror} failed "
+                    f"(attempt {attempt}/{max_attempts}): {exc!r} -- "
+                    f"retrying in {wait_s:.0f}s"
+                )
+                time.sleep(wait_s)
+        print(f"  {mirror} exhausted -- trying next mirror if any remain...")
     raise RuntimeError(
-        f"OSM request failed after {max_attempts} attempts: {last_error!r}"
+        f"OSM request failed after trying all {len(OVERPASS_MIRRORS)} "
+        f"Overpass mirrors: {last_error!r}"
     ) from last_error
 
 
