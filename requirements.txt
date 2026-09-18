@@ -1,0 +1,12 @@
+streamlit
+osmnx
+geopandas
+shapely
+pyproj
+networkx
+pandas
+numpy
+folium
+gspread
+google-auth
+openpyxl
